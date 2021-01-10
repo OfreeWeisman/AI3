@@ -1,35 +1,39 @@
 import pandas as pd
 import numpy as np
+from sklearn.model_selection import KFold
+import matplotlib.pyplot as plt
 
 
 class ID3:
     def __init__(self,
-                 decision_tree):
+                 decision_tree=None, m=0):
         self.decision_tree = decision_tree
+        self.m = m
 
-    def fit(self):
+    def fit(self, patients):
         """ This function builds the decision tree according to the training data"""
-
-        # Create the patients collection from the training data
-        patients = self.tableToPatients('train.csv')
+        if patients is None:
+            # Create the patients collection from the training data
+            patients = self.tableToPatients('train.csv')
         # Create the root node of the decision tree
         root = self.Node(None, None, None, patients, None, None)
         # Recursively build the tree and update the class field
-        self.splitNode(root)
+        if self.m == 0:
+            self.splitNode(root)
+        else:
+            self.mSplitNode(root, self.m)
         self.decision_tree = root
-        # print(root.feature)
-        # print(len(root.left_sub_tree.patients))
-        # print(len(root.right_sub_tree.patients))
 
-    def predict(self):
+    def predict(self, patients):
         """ This function receives an item to inspect and decides whether the result is 'ill' or 'health' """
-        patients = self.tableToPatients('test.csv')
+        if patients is None:
+            patients = self.tableToPatients('test.csv')
         counter = 0
         for p in patients:
             if self.diagnose(self.decision_tree, p):
                 counter += 1
         total = len(patients)
-        print(counter / total)
+        return counter / total
 
     def diagnose(self, node, patient):
         if node.decision is not None:
@@ -65,10 +69,8 @@ class ID3:
         """
 
         def __init__(self,
-                     pid,
                      diagnosis,
                      symptoms):
-            self.pid = pid
             self.diagnosis = diagnosis
             self.symptoms = symptoms
 
@@ -104,6 +106,8 @@ class ID3:
         The 'feature' argument is an index of the value in the symptoms list of every patient
         """
 
+        if len(patients) <= 1:
+            return 0, None, None, None
         data_frame = pd.read_csv('train.csv')
         table = data_frame.values.tolist()
         values = []
@@ -123,6 +127,8 @@ class ID3:
             smaller = []
             bigger = []
             for p in patients:
+                if feature >= len(p.symptoms):
+                    print(feature)
                 if p.symptoms[feature] < mid:
                     smaller.append(p)
                 else:
@@ -170,12 +176,12 @@ class ID3:
         table = data_frame.values.tolist()
 
         rows = len(table)
-        for i in range(1, rows):
+        for i in range(rows):
             diagnosis = table[i][0]
             symptoms = table[i]
             symptoms.pop(0)
             symptoms = list(map(lambda s: float(s), symptoms))
-            p = self.Patient(i + 1, diagnosis, symptoms)
+            p = self.Patient(diagnosis, symptoms)
             patients.append(p)
         return patients
 
@@ -205,8 +211,91 @@ class ID3:
         self.splitNode(node.left_sub_tree)
         self.splitNode(node.right_sub_tree)
 
+    def majority(self, patients):
+        sick = 0
+        healthy = 0
+        for p in patients:
+            if p.diagnosis == 'M':
+                sick += 1
+            else:
+                healthy += 1
+        if sick >= healthy:
+            return 'M'
+        return 'B'
+
+    def mSplitNode(self, node, m):
+        patients = node.patients
+        if len(patients) <= m:
+            node.decision = self.majority(patients)
+            return
+        elif self.allSame(patients, 'M'):
+            node.decision = 'M'
+            return
+        elif self.allSame(patients, 'B'):
+            node.decision = 'B'
+            return
+
+        feature, threshold, smaller, bigger = self.find_feature_and_threshold_to_split_by(patients)
+        left_son = self.Node(None, None, None, smaller, None, None)
+        right_son = self.Node(None, None, None, bigger, None, None)
+        node.left_sub_tree = left_son
+        node.right_sub_tree = right_son
+        node.threshold = threshold
+        node.feature = feature
+
+        self.mSplitNode(node.left_sub_tree, m)
+        self.mSplitNode(node.right_sub_tree, m)
+
+
+def dataToPatients(id3, indices):
+    patients = []
+    data_frame = pd.read_csv('train.csv')
+    table = data_frame.values.tolist()
+    patients_table = [table[i] for i in indices]
+
+    rows = len(patients_table)
+    for i in range(rows):
+        diagnosis = patients_table[i][0]
+        symptoms = patients_table[i]
+        symptoms.pop(0)
+        symptoms = list(map(lambda s: float(s), symptoms))
+        p = id3.Patient(diagnosis, symptoms)
+        patients.append(p)
+    return patients
+
+
+def experiments():
+    kf = KFold(n_splits=5, shuffle=True, random_state=312461270)
+    data_frame = pd.read_csv('train.csv')
+    table = data_frame.values.tolist()
+    parameters = [1, 5, 7, 12, 15, 50, 100, 200]
+    # parameters = [1, 2, 3, 5, 8, 16, 30, 50, 80, 120]
+    # parameters = [2, 5, 7, 12, 30, 80, 120]
+    experiment_results = []
+    for m in parameters:
+        results = 0
+        id3 = ID3(m=m)
+        for train_index, test_index in kf.split(table):
+            patients_for_train = dataToPatients(id3, train_index)
+            patients_for_test = dataToPatients(id3, test_index)
+            id3.fit(patients_for_train)
+            results += id3.predict(patients_for_test)
+        average_success_rate = results / 5
+        experiment_results.append(average_success_rate)
+    print(experiment_results)
+
+    plt.plot(parameters, experiment_results)
+    plt.xlabel('Parameter M')
+    plt.ylabel('Accuracy')
+    plt.show()
+
 
 if __name__ == '__main__':
-    id3 = ID3(None)
-    id3.fit()
-    id3.predict()
+    my_id3 = ID3(None)
+    my_id3.fit(None)
+    print(my_id3.predict(None))
+
+    my_id3 = ID3(None, 8)
+    my_id3.fit(None)
+    print(my_id3.predict(None))
+    experiments()
