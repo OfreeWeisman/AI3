@@ -6,9 +6,8 @@ import matplotlib.pyplot as plt
 
 class ID3:
     def __init__(self,
-                 decision_tree=None, m=0):
+                 decision_tree=None):
         self.decision_tree = decision_tree
-        self.m = m
 
     def fit(self, patients):
         """ This function builds the decision tree according to the training data"""
@@ -18,10 +17,7 @@ class ID3:
         # Create the root node of the decision tree
         root = self.Node(None, None, None, patients, None, None)
         # Recursively build the tree and update the class field
-        if self.m == 0:
-            self.splitNode(root)
-        else:
-            self.mSplitNode(root, self.m)
+        self.improvedSplitNode(root)
         self.decision_tree = root
 
     def predict(self, patients):
@@ -29,16 +25,24 @@ class ID3:
         if patients is None:
             patients = self.tableToPatients('test.csv')
         counter = 0
+        fp = 0
+        fn = 0
         for p in patients:
-            if self.diagnose(self.decision_tree, p):
+            result, decision = self.diagnose(self.decision_tree, p)
+            if result:
                 counter += 1
+            if decision == 'M' and p.diagnosis == 'B':
+                fp += 1
+            if decision == 'B' and p.diagnosis == 'M':
+                fn += 1
 
         total = len(patients)
-        return counter / total
+        loss = ((0.1*fp) + fn) / total
+        return loss
 
     def diagnose(self, node, patient):
         if node.decision is not None:
-            return patient.diagnosis == node.decision
+            return patient.diagnosis == node.decision, node.decision
 
         symptom_val = patient.symptoms[node.feature]
         if symptom_val < node.threshold:
@@ -193,9 +197,10 @@ class ID3:
                 return False
         return True
 
-    def splitNode(self, node):
+
+    def improvedSplitNode(self, node):
         patients = node.patients
-        if self.allSame(patients, 'M'):
+        if self.mostSick(patients):
             node.decision = 'M'
             return
         elif self.allSame(patients, 'B'):
@@ -210,88 +215,18 @@ class ID3:
         node.threshold = threshold
         node.feature = feature
 
-        self.splitNode(node.left_sub_tree)
-        self.splitNode(node.right_sub_tree)
+        self.improvedSplitNode(node.left_sub_tree)
+        self.improvedSplitNode(node.right_sub_tree)
 
-
-    def majority(self, patients):
+    def mostSick(self, patients):
+        total = len(patients)
         sick = 0
-        healthy = 0
         for p in patients:
             if p.diagnosis == 'M':
                 sick += 1
-            else:
-                healthy += 1
-        if sick >= healthy:
-            return 'M'
-        return 'B'
-
-
-    def mSplitNode(self, node, m):
-        patients = node.patients
-        if len(patients) <= m:
-            node.decision = self.majority(patients)
-            return
-        elif self.allSame(patients, 'M'):
-            node.decision = 'M'
-            return
-        elif self.allSame(patients, 'B'):
-            node.decision = 'B'
-            return
-
-        feature, threshold, smaller, bigger = self.find_feature_and_threshold_to_split_by(patients)
-        left_son = self.Node(None, None, None, smaller, None, None)
-        right_son = self.Node(None, None, None, bigger, None, None)
-        node.left_sub_tree = left_son
-        node.right_sub_tree = right_son
-        node.threshold = threshold
-        node.feature = feature
-
-        self.mSplitNode(node.left_sub_tree, m)
-        self.mSplitNode(node.right_sub_tree, m)
-
-
-def dataToPatients(id3, indices):
-    patients = []
-    data_frame = pd.read_csv('train.csv')
-    table = data_frame.values.tolist()
-    patients_table = [table[i] for i in indices]
-
-    rows = len(patients_table)
-    for i in range(rows):
-        diagnosis = patients_table[i][0]
-        symptoms = patients_table[i]
-        symptoms.pop(0)
-        symptoms = list(map(lambda s: float(s), symptoms))
-        p = id3.Patient(diagnosis, symptoms)
-        patients.append(p)
-    return patients
-
-
-def experiments():
-    kf = KFold(n_splits=5, shuffle=True, random_state=312461270)
-    data_frame = pd.read_csv('train.csv')
-    table = data_frame.values.tolist()
-    parameters = [1, 5, 7, 12, 15, 50, 100, 200]
-    # parameters = [1, 2, 3, 5, 8, 16, 30, 50, 80, 120]
-    # parameters = [2, 5, 7, 12, 30, 80, 120]
-    experiment_results = []
-    for m in parameters:
-        results = 0
-        id3 = ID3(m=m)
-        for train_index, test_index in kf.split(table):
-            patients_for_train = dataToPatients(id3, train_index)
-            patients_for_test = dataToPatients(id3, test_index)
-            id3.fit(patients_for_train)
-            results += id3.predict(patients_for_test)
-        average_success_rate = results / 5
-        experiment_results.append(average_success_rate)
-    print(experiment_results)
-
-    plt.plot(parameters, experiment_results)
-    plt.xlabel('Parameter M')
-    plt.ylabel('Accuracy')
-    plt.show()
+        if sick/total >= 0.9:
+            return True
+        return False
 
 
 if __name__ == '__main__':
@@ -299,7 +234,3 @@ if __name__ == '__main__':
     my_id3.fit(None)
     print(my_id3.predict(None))
 
-    # my_id3 = ID3(None, 8)
-    # my_id3.fit(None)
-    # print(my_id3.predict(None))
-    # experiments()
