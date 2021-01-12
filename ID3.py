@@ -16,7 +16,7 @@ class ID3:
             # Create the patients collection from the training data
             patients = self.tableToPatients('train.csv')
         # Create the root node of the decision tree
-        root = self.Node(None, None, None, patients, None, None)
+        root = self.Node(None, None, None, patients, None, None, None)
         # Recursively build the tree and update the class field
         if self.m == 0:
             self.splitNode(root)
@@ -67,7 +67,6 @@ class ID3:
             self.right_sub_tree = right_sub_tree
             self.fathers_patients = fathers_patients
 
-
     class Patient:
         """ This class represents one example = one line in the table
             Symptoms is a collection of tuples : (feature, value)
@@ -116,10 +115,9 @@ class ID3:
         data_frame = pd.read_csv('train.csv')
         table = data_frame.values.tolist()
         values = []
-        for i in range(1, len(table)):
+        for i in range(0, len(table)):
             values.append(table[i][feature + 1])
 
-        values = list(map(lambda s: float(s), values))
         values.sort()
         best_ig = 0
         threshold = None
@@ -185,7 +183,6 @@ class ID3:
             diagnosis = table[i][0]
             symptoms = table[i]
             symptoms.pop(0)
-            symptoms = list(map(lambda s: float(s), symptoms))
             p = self.Patient(diagnosis, symptoms)
             patients.append(p)
         return patients
@@ -206,8 +203,8 @@ class ID3:
             return
 
         feature, threshold, smaller, bigger = self.find_feature_and_threshold_to_split_by(patients)
-        left_son = self.Node(None, None, None, smaller, None, None)
-        right_son = self.Node(None, None, None, bigger, None, None)
+        left_son = self.Node(None, None, None, smaller, None, None, patients)
+        right_son = self.Node(None, None, None, bigger, None, None, patients)
         node.left_sub_tree = left_son
         node.right_sub_tree = right_son
         node.threshold = threshold
@@ -215,7 +212,6 @@ class ID3:
 
         self.splitNode(node.left_sub_tree)
         self.splitNode(node.right_sub_tree)
-
 
     def majority(self, patients):
         sick = 0
@@ -229,11 +225,10 @@ class ID3:
             return 'M'
         return 'B'
 
-
     def mSplitNode(self, node, m):
         patients = node.patients
-        if len(patients) <= m:
-            node.decision = self.majority(patients)
+        if len(patients) < m:
+            node.decision = self.majority(node.fathers_patients)
             return
         elif self.allSame(patients, 'M'):
             node.decision = 'M'
@@ -243,13 +238,12 @@ class ID3:
             return
 
         feature, threshold, smaller, bigger = self.find_feature_and_threshold_to_split_by(patients)
-        left_son = self.Node(None, None, None, smaller, None, None)
-        right_son = self.Node(None, None, None, bigger, None, None)
+        left_son = self.Node(None, None, None, smaller, None, None, patients)
+        right_son = self.Node(None, None, None, bigger, None, None, patients)
         node.left_sub_tree = left_son
         node.right_sub_tree = right_son
         node.threshold = threshold
         node.feature = feature
-
         self.mSplitNode(node.left_sub_tree, m)
         self.mSplitNode(node.right_sub_tree, m)
 
@@ -265,19 +259,19 @@ def dataToPatients(id3, indices):
         diagnosis = patients_table[i][0]
         symptoms = patients_table[i]
         symptoms.pop(0)
-        symptoms = list(map(lambda s: float(s), symptoms))
         p = id3.Patient(diagnosis, symptoms)
         patients.append(p)
     return patients
 
 
 def experiments():
-    kf = KFold(n_splits=5, shuffle=True, random_state=312461270)
+    kf = KFold(n_splits=5, shuffle=True, random_state=123456789)
     data_frame = pd.read_csv('train.csv')
     table = data_frame.values.tolist()
-    parameters = [1, 5, 7, 12, 15, 50, 100, 200]
+    # parameters = [1, 5, 7, 12, 15, 50, 100, 200]
     # parameters = [1, 2, 3, 5, 8, 16, 30, 50, 80, 120]
     # parameters = [2, 5, 7, 12, 30, 80, 120]
+    parameters = [1, 2, 3, 5, 8, 16, 30, 50, 80, 120]
     experiment_results = []
     for m in parameters:
         results = 0
@@ -298,11 +292,11 @@ def experiments():
 
 
 if __name__ == '__main__':
-    my_id3 = ID3(None)
-    my_id3.fit(None)
-    print(my_id3.predict(None))
-
-    # my_id3 = ID3(None, 8)
+    # my_id3 = ID3(m=7)
     # my_id3.fit(None)
     # print(my_id3.predict(None))
-    # experiments()
+
+    # my_id3 = ID3(None)
+    # my_id3.fit(None)
+    # print(my_id3.predict(None))
+    experiments()

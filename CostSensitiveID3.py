@@ -197,7 +197,6 @@ class ID3:
                 return False
         return True
 
-
     def improvedSplitNode(self, node):
         patients = node.patients
         if self.mostSick(patients):
