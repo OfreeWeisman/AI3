@@ -2,12 +2,13 @@ import pandas as pd
 import numpy as np
 import random
 import copy
+from sklearn.model_selection import KFold
+
 import matplotlib.pyplot as plt
 
-
-N = 20
-K = 15
-p = 0.3
+N = 10
+K = 3
+p = 0.6
 
 
 class KNNForest:
@@ -15,7 +16,7 @@ class KNNForest:
         self.forest = forest
         self.centroids = centroids
 
-    def fit(self):
+    def fit(self, patients):
         """ This function splits the training data to N different groups
             For each group, builds a decision tree and centroid vector"""
 
@@ -24,7 +25,8 @@ class KNNForest:
 
         # split the training data to N groups of patients
         # For each group built tree and calculate the centroid
-        patients = self.tableToPatients('train.csv')
+        if patients is None:
+            patients = self.tableToPatients('train.csv')
         for i in range(N):
             patients_group = self.randomPatientsGroup(patients, p)
             tree = self.buildTree(patients_group)
@@ -35,12 +37,12 @@ class KNNForest:
         self.forest = forest
         self.centroids = centroids
 
-    def predict(self):
+    def predict(self, patients):
         """ For each patient in the test data, choose K trees from the forest
             Return the majority's decision
         """
-
-        patients = self.tableToPatients('test.csv')
+        if patients is None:
+            patients = self.tableToPatients('test.csv')
         counter = 0
         # for each patient find K trees with the closest centroid to the patients
         for patient in patients:
@@ -108,7 +110,7 @@ class KNNForest:
             val = 0
             for patient in patients:
                 val += patient.symptoms[i]
-            centroid.append(val/num)
+            centroid.append(val / num)
         return centroid
 
     def chooseKTrees(self, vector):
@@ -141,7 +143,7 @@ class KNNForest:
 
     def distanceBetweenVectors(self, v1, v2):
         diff = [np.abs(v1[i] - v2[i]) for i in range(len(v1))]
-        diff = sum(list(map(lambda x: x*x, diff)))
+        diff = sum(list(map(lambda x: x * x, diff)))
         return diff
 
     def buildTree(self, patients):
@@ -176,7 +178,7 @@ class KNNForest:
         p_healthy = healthy / total
         if p_sick == 0 or p_healthy == 0:
             return 0
-        return - (p_healthy * np.log(p_healthy)) - (p_sick * np.log(p_sick))
+        return - (p_healthy * np.log2(p_healthy)) - (p_sick * np.log2(p_sick))
 
     def calculateIG(self, patients, list1, list2):
         h = self.entropy(patients)
@@ -195,14 +197,8 @@ class KNNForest:
 
         if len(patients) <= 1:
             return 0, None, None, None
-        data_frame = pd.read_csv('train.csv')
-        table = data_frame.values.tolist()
-        values = []
-        for i in range(1, len(table)):
-            values.append(table[i][feature + 1])
-
-        values = list(map(lambda s: float(s), values))
-        values.sort()
+        values = [p.symptoms[feature] for p in patients]
+        values = sorted(values)
         best_ig = 0
         threshold = None
         less_than = []
@@ -221,7 +217,7 @@ class KNNForest:
                 else:
                     bigger.append(p)
             ig = self.calculateIG(patients, smaller, bigger)
-            if ig >= best_ig:
+            if ig > best_ig:
                 best_ig = ig
                 threshold = mid
                 less_than = smaller
@@ -234,10 +230,7 @@ class KNNForest:
             It is also calculates that threshold value
         """
 
-        # Create a list of all features
-        examples = pd.read_csv("train.csv")
-        features = list(examples.columns)
-        num_of_features = len(features) - 1
+        num_of_features = len(patients[0].symptoms)
 
         # For each feature find the value to split by that provides the best IG
         # Save the best feature and the threshold
@@ -299,40 +292,95 @@ class KNNForest:
         self.splitNode(node.right_sub_tree)
 
 
-if __name__ == '__main__':
+def dataToPatients(id3, indices):
+    patients = []
+    data_frame = pd.read_csv('train.csv')
+    table = data_frame.values.tolist()
+    patients_table = [table[i] for i in indices]
+
+    rows = len(patients_table)
+    for i in range(rows):
+        diagnosis = patients_table[i][0]
+        symptoms = patients_table[i]
+        symptoms.pop(0)
+        p = id3.Patient(diagnosis, symptoms)
+        patients.append(p)
+    return patients
+
+
+def experiments():
     knn = KNNForest()
-    ns = [5, 10, 15, 20, 50]
-    ks = [3, 5, 7, 11, 21, 33, 45]
-    ps = [0.3, 0.4, 0.5, 0.6, 0.7]
-
-    best_n = None
-    best_k = None
-    best_p = None
-    acc = 0
-
+    kf = KFold(n_splits=5, shuffle=True, random_state=123456789)
+    data_frame = pd.read_csv('train.csv')
+    table = data_frame.values.tolist()
+    # ns = [5, 10, 15, 20]
+    # ks = [3, 5, 7, 11, 18]
+    # ps = [0.3, 0.4, 0.5, 0.6, 0.7]
+    ns = [8, 16, 24]
+    ks = [3, 5, 9, 11]
+    ps = [0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65]
+    experiment_results = []
     for n in ns:
         for k in ks:
-            if k > n:
+            if k >= n:
                 break
-            N = n
-            K = k
-            # accuracies = []
-            for param in ps:
-                p = param
-                knn.fit()
-                accuracy = knn.predict()
-                # accuracies.append(accuracy)
-                if accuracy > acc:
-                    best_n = n
-                    best_k = k
-                    best_p = param
-                    acc = accuracy
-            print('N=', n, 'K=', k)
+            for p in ps:
+                N = n
+                K = k
+                results = 0
+                for train_index, test_index in kf.split(table):
+                    patients_for_train = dataToPatients(knn, train_index)
+                    patients_for_test = dataToPatients(knn, test_index)
+                    knn.fit(patients_for_train)
+                    results += knn.predict(patients_for_test)
+                average_success_rate = results / 5
+                experiment_results.append((n, k, p, average_success_rate))
+                print((k, n, p, average_success_rate))
+    print(experiment_results)
 
-            # plt.plot(ps, accuracies)
-            # plt.xlabel('Parameters')
-            # plt.ylabel('Accuracy')
-            # print('N=', n, 'K=', k)
-            # plt.show()
-    print('accuracy=', acc, 'N=', best_n, 'K=', best_k, 'p=', best_p)
 
+if __name__ == '__main__':
+    # experiments()
+    ps = [0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65]
+    for i in range(10):
+        for param in ps:
+            p = param
+            knn = KNNForest()
+            knn.fit(None)
+            print('p=', p, 'accuracy=', knn.predict(None))
+    # ns = [5, 10, 15, 20]
+    # ks = [3, 7, 11, 18]
+    # ns = [5, 10]
+    # ks = [3, 5, 7]
+    # ps = [0.3, 0.4, 0.5, 0.6, 0.7]
+    #
+    # best_n = None
+    # best_k = None
+    # best_p = None
+    # acc = 0
+    #
+    # for n in ns:
+    #     for k in ks:
+    #         if k > n:
+    #             break
+    #         N = n
+    #         K = k
+    #         # accuracies = []
+    #         for param in ps:
+    #             p = param
+    #             knn.fit()
+    #             accuracy = knn.predict()
+    #             # accuracies.append(accuracy)
+    #             if accuracy > acc:
+    #                 best_n = n
+    #                 best_k = k
+    #                 best_p = param
+    #                 acc = accuracy
+    #         print('N=', n, 'K=', k, 'accuracy=', accuracy)
+    #
+    #         # plt.plot(ps, accuracies)
+    #         # plt.xlabel('Parameters')
+    #         # plt.ylabel('Accuracy')
+    #         # print('N=', n, 'K=', k)
+    #         # plt.show()
+    # print('accuracy=', acc, 'N=', best_n, 'K=', best_k, 'p=', best_p)

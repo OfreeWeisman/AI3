@@ -1,7 +1,5 @@
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import KFold
-import matplotlib.pyplot as plt
 
 
 class ID3:
@@ -95,7 +93,7 @@ class ID3:
         p_healthy = healthy / total
         if p_sick == 0 or p_healthy == 0:
             return 0
-        return - (p_healthy * np.log(p_healthy)) - (p_sick * np.log(p_sick))
+        return - (p_healthy * np.log2(p_healthy)) - (p_sick * np.log2(p_sick))
 
     def calculateIG(self, patients, list1, list2):
         h = self.entropy(patients)
@@ -114,14 +112,8 @@ class ID3:
 
         if len(patients) <= 1:
             return 0, None, None, None
-        data_frame = pd.read_csv('train.csv')
-        table = data_frame.values.tolist()
-        values = []
-        for i in range(1, len(table)):
-            values.append(table[i][feature + 1])
-
-        values = list(map(lambda s: float(s), values))
-        values.sort()
+        values = [p.symptoms[feature] for p in patients]
+        values = sorted(values)
         best_ig = 0
         threshold = None
         less_than = []
@@ -140,7 +132,7 @@ class ID3:
                 else:
                     bigger.append(p)
             ig = self.calculateIG(patients, smaller, bigger)
-            if ig >= best_ig:
+            if ig > best_ig:
                 best_ig = ig
                 threshold = mid
                 less_than = smaller
@@ -153,10 +145,7 @@ class ID3:
             It is also calculates that threshold value
         """
 
-        # Create a list of all features
-        examples = pd.read_csv("train.csv")
-        features = list(examples.columns)
-        num_of_features = len(features) - 1
+        num_of_features = len(patients[0].symptoms)
 
         # For each feature find the value to split by that provides the best IG
         # Save the best feature and the threshold
