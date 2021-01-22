@@ -1,10 +1,12 @@
 import pandas as pd
 import numpy as np
+from sklearn.model_selection import KFold
 
 
 class ID3:
     def __init__(self,
-                 decision_tree=None):
+                 decision_tree=None, param=None):
+        self.param = param
         self.decision_tree = decision_tree
 
     def fit(self, patients):
@@ -35,7 +37,7 @@ class ID3:
                 fn += 1
 
         total = len(patients)
-        loss = ((0.1*fp) + fn) / total
+        loss = ((0.1 * fp) + fn) / total
         return loss
 
     def diagnose(self, node, patient):
@@ -212,13 +214,49 @@ class ID3:
         for p in patients:
             if p.diagnosis == 'M':
                 sick += 1
-        if sick/total >= 0.9:
+        if sick / total >= self.param:
             return True
         return False
 
 
+def dataToPatients(id3, indices):
+    patients = []
+    data_frame = pd.read_csv('train.csv')
+    table = data_frame.values.tolist()
+    patients_table = [table[i] for i in indices]
+
+    rows = len(patients_table)
+    for i in range(rows):
+        diagnosis = patients_table[i][0]
+        symptoms = patients_table[i]
+        symptoms.pop(0)
+        p = id3.Patient(diagnosis, symptoms)
+        patients.append(p)
+    return patients
+
+
+def experiments():
+    kf = KFold(n_splits=5, shuffle=True, random_state=312461270)
+    data_frame = pd.read_csv('train.csv')
+    table = data_frame.values.tolist()
+    parameters = [0.7, 0.75, 0.8, 0.85, 0.9, 0.95]
+    experiment_results = []
+    for m in parameters:
+        results = 0
+        id3 = ID3(param=m)
+        for train_index, test_index in kf.split(table):
+            patients_for_train = dataToPatients(id3, train_index)
+            patients_for_test = dataToPatients(id3, test_index)
+            id3.fit(patients_for_train)
+            results += id3.predict(patients_for_test)
+        average_success_rate = results / 5
+        experiment_results.append((m, average_success_rate))
+
+    print(experiment_results)
+
+
 if __name__ == '__main__':
-    my_id3 = ID3(None)
+    my_id3 = ID3(param=0.9)
     my_id3.fit(None)
     print(my_id3.predict(None))
-
+    # experiments()

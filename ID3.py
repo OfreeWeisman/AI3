@@ -254,14 +254,14 @@ def dataToPatients(id3, indices):
     return patients
 
 
+""" In Order To Run This Function, Simply Remove the Remark From The Main Function.
+    Make Sure That The Training Data File Named 'train.csv'
+"""
 def experiments():
-    kf = KFold(n_splits=5, shuffle=True, random_state=123456789)
+    kf = KFold(n_splits=5, shuffle=True, random_state=312461270)
     data_frame = pd.read_csv('train.csv')
     table = data_frame.values.tolist()
-    # parameters = [1, 5, 7, 12, 15, 50, 100, 200]
-    # parameters = [1, 2, 3, 5, 8, 16, 30, 50, 80, 120]
-    # parameters = [2, 5, 7, 12, 30, 80, 120]
-    parameters = [1, 2, 3, 5, 8, 16, 30, 50, 80, 120]
+    parameters = [3, 5, 7, 20, 100]
     experiment_results = []
     for m in parameters:
         results = 0
@@ -273,6 +273,7 @@ def experiments():
             results += id3.predict(patients_for_test)
         average_success_rate = results / 5
         experiment_results.append(average_success_rate)
+
     print(experiment_results)
 
     plt.plot(parameters, experiment_results)
@@ -282,11 +283,8 @@ def experiments():
 
 
 if __name__ == '__main__':
-    # my_id3 = ID3(m=7)
-    # my_id3.fit(None)
-    # print(my_id3.predict(None))
-
-    my_id3 = ID3(None)
+    my_id3 = ID3()
     my_id3.fit(None)
     print(my_id3.predict(None))
-    experiments()
+
+    # experiments()

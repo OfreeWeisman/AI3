@@ -6,26 +6,15 @@ from sklearn.model_selection import KFold
 
 import matplotlib.pyplot as plt
 
-N = 10
-K = 5
-p = 0.5
+N = 15
+K = 11
+p = 0.6
 
 
-def distanceBetweenVectors(v1, v2):
-    diff = [np.abs(v1[i] - v2[i]) for i in range(len(v1))]
+def distanceBetweenVectors(v1, v2, features):
+    diff = [np.abs(v1[i] - v2[i]) for i in features]
     diff = sum(list(map(lambda x: x * x, diff)))
     return diff
-
-
-def closestVector(vector, vectors):
-    min_dist = float('inf')
-    best_v = None
-    for v in vectors:
-        dist = distanceBetweenVectors(vector, v)
-        if dist < min_dist:
-            min_dist = dist
-            best_v = v
-    return best_v
 
 
 def randomPatientsGroup(patients, param):
@@ -150,7 +139,10 @@ def calcCentroid(patients):
 
 
 class KNNForest:
-    def __init__(self, forest=None, centroids=None, norForest=None, norCentroids=None, minmax_values=None):
+    def __init__(self, forest=None, centroids=None, norForest=None, norCentroids=None, minmax_values=None, param=None, features=None, nor_features=None):
+        self.nor_features = nor_features
+        self.features = features
+        self.param = param
         self.minmax_values = minmax_values
         self.norForest = norForest
         self.norCentroids = norCentroids
@@ -165,17 +157,22 @@ class KNNForest:
         centroids = []
         normalized_forest = []
         normalized_centroids = []
+        features = set([])
+        nor_features = set([])
 
         # split the training data to N groups of patients
         # For each group built tree and calculate the centroid
         if patients is None:
             patients = self.tableToPatients('train.csv')
+
         for i in range(N):
             patients_group = randomPatientsGroup(patients, p)
             normalized_group = self.normalize(patients_group)
-            tree = self.buildTree(patients_group)
+            tree, selected_features = self.buildTree(patients_group)
+            features = features | set(selected_features)
             centroid = calcCentroid(patients_group)
-            normalized_tree = self.buildTree(normalized_group)
+            normalized_tree, nor_selected_features = self.buildTree(normalized_group)
+            nor_features = nor_features | set(nor_selected_features)
             normalized_centroid = calcCentroid(normalized_group)
             forest.append(tree)
             centroids.append(centroid)
@@ -186,6 +183,8 @@ class KNNForest:
         self.centroids = centroids
         self.norForest = normalized_forest
         self.norCentroids = normalized_centroids
+        self.features = features
+        self.nor_features = nor_features
 
     def predict(self, patients):
         """ For each patient in the test data, choose K trees from the forest
@@ -193,14 +192,44 @@ class KNNForest:
         """
         if patients is None:
             patients = self.tableToPatients('test.csv')
+        d_counter = 0
+        d_normalized_counter = 0
         counter = 0
         normalized_counter = 0
         # for each patient find K trees with the closest centroid to the patients
         for patient in patients:
             normalized_symptoms = copy.deepcopy(patient.symptoms)
             length = len(normalized_symptoms)
-            normalized_symptoms_vals = [(normalized_symptoms[i] - self.minmax_values[i][0])/(self.minmax_values[i][1] - self.minmax_values[i][0]) for i in range(length)]
+            normalized_symptoms_vals = [(normalized_symptoms[i] - self.minmax_values[i][0]) / (
+                    self.minmax_values[i][1] - self.minmax_values[i][0]) for i in range(length)]
+            d_committee, d_normalized_committee = self.chooseKTreesDynamically(patient.symptoms,
+                                                                               normalized_symptoms_vals)
             committee, normalized_committee = self.chooseKTrees(patient.symptoms, normalized_symptoms_vals)
+            sick = 0
+            healthy = 0
+            for tree in d_committee:
+                if self.diagnose(tree, patient) == 'M':
+                    sick += 1
+                else:
+                    healthy += 1
+
+            decision = 'B' if healthy > sick else 'M'
+            if decision == patient.diagnosis:
+                d_counter += 1
+
+            sick = 0
+            healthy = 0
+            n_patient = self.normFeatures(patient)
+            for tree in d_normalized_committee:
+                if self.diagnose(tree, n_patient) == 'M':
+                    sick += 1
+                else:
+                    healthy += 1
+
+            decision = 'B' if healthy > sick else 'M'
+            if decision == n_patient.diagnosis:
+                d_normalized_counter += 1
+
             sick = 0
             healthy = 0
             for tree in committee:
@@ -227,7 +256,7 @@ class KNNForest:
                 normalized_counter += 1
 
         total = len(patients)
-        return counter / total, normalized_counter / total
+        return d_counter / total, d_normalized_counter / total, counter / total, normalized_counter / total
 
     class Node:
         """ This class represents a node of the decision tree.
@@ -240,7 +269,8 @@ class KNNForest:
                      decision,
                      patients,
                      left_sub_tree,
-                     right_sub_tree):
+                     right_sub_tree, selected_features):
+            self.selected_features = selected_features
             self.feature = feature
             self.threshold = threshold
             self.decision = decision
@@ -269,20 +299,76 @@ class KNNForest:
         else:
             return self.diagnose(node.right_sub_tree, patient)
 
+    def closestVector(self, vector, vectors, features):
+        min_dist = float('inf')
+        best_v = None
+        for v in vectors:
+            dist = distanceBetweenVectors(vector, v, features)
+            if dist < min_dist:
+                min_dist = dist
+                best_v = v
+        return best_v
+
     def chooseKTrees(self, vector, nvector):
         k_trees = []
         normalized_k_trees = []
         my_centroids = copy.deepcopy(self.centroids)
         my_normalized_centroids = copy.deepcopy(self.norCentroids)
         for i in range(K):
-            closest = closestVector(vector, my_centroids)
-            nor_closest = closestVector(nvector, my_normalized_centroids)
+            closest = self.closestVector(vector, my_centroids, self.features)
+            nor_closest = self.closestVector(nvector, my_normalized_centroids, self.nor_features)
             index = self.getCentroidIndex(closest)
             nor_index = self.getNormalizedCentroidIndex(nor_closest)
             k_trees.append(self.forest[index])
             normalized_k_trees.append(self.norForest[nor_index])
             my_centroids.remove(closest)
             my_normalized_centroids.remove(nor_closest)
+        return k_trees, normalized_k_trees
+
+    def chooseKTreesDynamically(self, vector, nvector):
+        k_trees = []
+        normalized_k_trees = []
+        my_centroids = copy.deepcopy(self.centroids)
+        my_normalized_centroids = copy.deepcopy(self.norCentroids)
+
+        # find closes centroid and tree
+        closest = self.closestVector(vector, my_centroids, self.features)
+        nor_closest = self.closestVector(nvector, my_normalized_centroids, self.nor_features)
+        index = self.getCentroidIndex(closest)
+        nor_index = self.getNormalizedCentroidIndex(nor_closest)
+        k_trees.append(self.forest[index])
+        normalized_k_trees.append(self.norForest[nor_index])
+        my_centroids.remove(closest)
+        my_normalized_centroids.remove(nor_closest)
+
+        # calc max distance
+        max_dist = self.param * distanceBetweenVectors(vector, closest, self.features)
+        n_max_dist = self.param * distanceBetweenVectors(nvector, nor_closest, self.features)
+
+        # find all centroids and trees which are closer than max_dist
+        for i in range(len(my_centroids)):
+            closest = self.closestVector(vector, my_centroids, self.features)
+            if distanceBetweenVectors(vector, closest, self.features) <= max_dist:
+                index = self.getCentroidIndex(closest)
+                k_trees.append(self.forest[index])
+                my_centroids.remove(closest)
+            else:
+                break
+        if len(k_trees) % 2 == 0:
+            k_trees.pop()
+
+        for j in range(len(my_normalized_centroids)):
+            nor_closest = self.closestVector(nvector, my_normalized_centroids, self.nor_features)
+            dist = distanceBetweenVectors(nvector, nor_closest, self.features)
+            if dist <= n_max_dist:
+                nor_index = self.getNormalizedCentroidIndex(nor_closest)
+                normalized_k_trees.append(self.norForest[nor_index])
+                my_normalized_centroids.remove(nor_closest)
+            else:
+                break
+        if len(normalized_k_trees) % 2 == 0:
+            normalized_k_trees.pop()
+
         return k_trees, normalized_k_trees
 
     def getCentroidIndex(self, c):
@@ -303,10 +389,11 @@ class KNNForest:
 
     def buildTree(self, patients):
         # Create the root node of the decision tree
-        root = self.Node(None, None, None, patients, None, None)
+        selected_features = []
+        root = self.Node(None, None, None, patients, None, None, selected_features)
         # Recursively build the tree and update the class field
         self.splitNode(root)
-        return root
+        return root, selected_features
 
     def tableToPatients(self, table):
         patients = []
@@ -333,8 +420,9 @@ class KNNForest:
             return
 
         feature, threshold, smaller, bigger = find_feature_and_threshold_to_split_by(patients)
-        left_son = self.Node(None, None, None, smaller, None, None)
-        right_son = self.Node(None, None, None, bigger, None, None)
+        node.selected_features.append(feature)
+        left_son = self.Node(None, None, None, smaller, None, None, node.selected_features)
+        right_son = self.Node(None, None, None, bigger, None, None, node.selected_features)
         node.left_sub_tree = left_son
         node.right_sub_tree = right_son
         node.threshold = threshold
@@ -362,7 +450,8 @@ class KNNForest:
         num_of_features = len(patient.symptoms)
         norm_patient = copy.deepcopy(patient)
         for i in range(num_of_features):
-            feature_value = (norm_patient.symptoms[i] - (self.minmax_values[i])[0]) / ((self.minmax_values[i])[1] - (self.minmax_values[i])[0])
+            feature_value = (norm_patient.symptoms[i] - (self.minmax_values[i])[0]) / (
+                    (self.minmax_values[i])[1] - (self.minmax_values[i])[0])
             if feature_value < 0:
                 feature_value = 0
             elif feature_value > 1:
@@ -387,11 +476,71 @@ def dataToPatients(id3, indices):
     return patients
 
 
+def removeFeatures(num_of_features):
+    features = list(range(num_of_features))
+
+    kf = KFold(n_splits=5, shuffle=True, random_state=123456789)
+    data_frame = pd.read_csv('train.csv')
+    table = data_frame.values.tolist()
+    results = 0
+    for train_index, test_index in kf.split(table):
+        patients_for_train = dataToPatients(knn, train_index)
+        patients_for_test = dataToPatients(knn, test_index)
+        knn.fit(patients_for_train)
+        results += knn.predict(patients_for_test)[0]
+    best_precision = results / 5
+
+    while len(features) > 0:
+        f_to_remove = None
+        for f in features:
+            print('f = ', f)
+            new_features = copy.deepcopy(features)
+            new_features.remove(f)
+            results = 0
+            for train_index, test_index in kf.split(table):
+                patients_for_train = dataToPatients(knn, train_index)
+                for p1 in patients_for_train:
+                    p1.symptoms.remove(p1.symptoms[f])
+                patients_for_test = dataToPatients(knn, test_index)
+                for p2 in patients_for_test:
+                    p2.symptoms.remove(p2.symptoms[f])
+                knn.fit(patients_for_train)
+                results += knn.predict(patients_for_test)[0]
+            if results / 5 > best_precision:
+                best_precision = results / 5
+                f_to_remove = f
+        if f_to_remove is None:
+            break
+        features.remove(f_to_remove)
+    return features
+
+
+def experiments():
+    kf = KFold(n_splits=5, shuffle=True, random_state=312461270)
+    data_frame = pd.read_csv('train.csv')
+    table = data_frame.values.tolist()
+    parameters = [1.6, 1.8, 2, 2.2, 3, 3.5, 4, 4.5, 5]
+    experiment_results = []
+    best = 0, 0
+    for m in parameters:
+        knn = KNNForest(param=m)
+        results = 0
+        for train_index, test_index in kf.split(table):
+            patients_for_train = dataToPatients(knn, train_index)
+            patients_for_test = dataToPatients(knn, test_index)
+            knn.fit(patients_for_train)
+            results += knn.predict(patients_for_test)[0]
+        average_success_rate = results / 5
+        if average_success_rate > best[1]:
+            best = (m, average_success_rate)
+        experiment_results.append((m, average_success_rate))
+        print((m, average_success_rate))
+    print(experiment_results)
+    print('best:', best)
+
+
 if __name__ == '__main__':
-    for i in range(10):
-        knn = KNNForest()
-        knn.fit(None)
-        regular, normalized = knn.predict(None)
-        print(regular, 'regular')
-        print(normalized, 'normalized')
-        print('improvement=', normalized/regular)
+    knn = KNNForest(param=1.5)
+    knn.fit(None)
+    d_regular, d_normalized, regular, normalized = knn.predict(None)
+    print(d_regular)

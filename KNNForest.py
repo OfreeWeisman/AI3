@@ -6,7 +6,7 @@ from sklearn.model_selection import KFold
 
 import matplotlib.pyplot as plt
 
-N = 10
+N = 15
 K = 3
 p = 0.6
 
@@ -310,14 +310,11 @@ def dataToPatients(id3, indices):
 
 def experiments():
     knn = KNNForest()
-    kf = KFold(n_splits=5, shuffle=True, random_state=123456789)
+    kf = KFold(n_splits=5, shuffle=True, random_state=312461270)
     data_frame = pd.read_csv('train.csv')
     table = data_frame.values.tolist()
-    # ns = [5, 10, 15, 20]
-    # ks = [3, 5, 7, 11, 18]
-    # ps = [0.3, 0.4, 0.5, 0.6, 0.7]
-    ns = [8, 16, 24]
-    ks = [3, 5, 9, 11]
+    ns = [5, 10, 15]
+    ks = [3, 5, 7, 11]
     ps = [0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65]
     experiment_results = []
     for n in ns:
@@ -340,47 +337,6 @@ def experiments():
 
 
 if __name__ == '__main__':
-    # experiments()
-    ps = [0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65]
-    for i in range(10):
-        for param in ps:
-            p = param
-            knn = KNNForest()
-            knn.fit(None)
-            print('p=', p, 'accuracy=', knn.predict(None))
-    # ns = [5, 10, 15, 20]
-    # ks = [3, 7, 11, 18]
-    # ns = [5, 10]
-    # ks = [3, 5, 7]
-    # ps = [0.3, 0.4, 0.5, 0.6, 0.7]
-    #
-    # best_n = None
-    # best_k = None
-    # best_p = None
-    # acc = 0
-    #
-    # for n in ns:
-    #     for k in ks:
-    #         if k > n:
-    #             break
-    #         N = n
-    #         K = k
-    #         # accuracies = []
-    #         for param in ps:
-    #             p = param
-    #             knn.fit()
-    #             accuracy = knn.predict()
-    #             # accuracies.append(accuracy)
-    #             if accuracy > acc:
-    #                 best_n = n
-    #                 best_k = k
-    #                 best_p = param
-    #                 acc = accuracy
-    #         print('N=', n, 'K=', k, 'accuracy=', accuracy)
-    #
-    #         # plt.plot(ps, accuracies)
-    #         # plt.xlabel('Parameters')
-    #         # plt.ylabel('Accuracy')
-    #         # print('N=', n, 'K=', k)
-    #         # plt.show()
-    # print('accuracy=', acc, 'N=', best_n, 'K=', best_k, 'p=', best_p)
+    knn = KNNForest()
+    knn.fit(None)
+    print(knn.predict(None))
